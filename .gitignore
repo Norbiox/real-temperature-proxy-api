@@ -1,4 +1,5 @@
-.todos
+docs/task_description.md
+docs/task_requirements.md
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
