@@ -1,9 +1,37 @@
 [project]
 name = "real-temperature-proxy-api"
 version = "0.1.0"
-description = "Real Temperature Proxy API normalizing results fetched from Open-Meteo "
+description = "Real Temperature Proxy API normalizing results fetched from Open-Meteo"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "fastapi[uvicorn]>=0.128.0",
+    "fastapi>=0.128.0",
+    "uvicorn>=0.30.0",
+    # HTTP & Async
+    "httpx>=0.25.0",
+    "tenacity>=8.2.0",
+    # Caching & Configuration
+    "fastapi-cache2>=0.2.1",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.0.0",
+    # Monitoring & Logging
+    "loguru>=0.7.0",
+    "opentelemetry-api>=1.21.0",
+    "opentelemetry-exporter-prometheus>=0.42b0",
+    "opentelemetry-instrumentation-fastapi>=0.42b0",
+]
+
+[project.optional-dependencies]
+dev = [
+    # Testing
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "vcrpy>=5.1.0",
+    "pytest-httpx>=0.21.0",
+    # Code Quality
+    "ruff>=0.1.0",
+    "mypy>=1.7.0",
+    "bandit>=1.7.5",
+    "pre-commit>=3.5.0",
 ]
