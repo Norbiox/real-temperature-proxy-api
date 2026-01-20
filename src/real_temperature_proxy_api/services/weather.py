@@ -2,7 +2,7 @@
 
 import asyncio
 from collections import defaultdict
-from datetime import datetime, timezone
+from collections.abc import Awaitable, Callable
 
 from fastapi import HTTPException
 from loguru import logger
@@ -48,7 +48,7 @@ class RequestCoalescer:
         self,
         latitude: float,
         longitude: float,
-        fetch_func,
+        fetch_func: Callable[[], Awaitable[WeatherResponse]],
     ) -> WeatherResponse:
         """Coalesce requests for the same coordinates.
 
@@ -77,7 +77,9 @@ class RequestCoalescer:
                     )
                     raise HTTPException(
                         status_code=503,
-                        detail={"error": "Service temporarily unavailable - too many concurrent requests"},
+                        detail={
+                            "error": "Service temporarily unavailable - too many concurrent requests"
+                        },
                     )
 
                 # Wait for existing fetch to complete
@@ -221,7 +223,9 @@ class WeatherService:
             logger.warning("Upstream API timeout")
             raise HTTPException(
                 status_code=504,
-                detail={"error": "Gateway timeout - upstream API did not respond in time"},
+                detail={
+                    "error": "Gateway timeout - upstream API did not respond in time"
+                },
             ) from e
 
         except OpenMeteoUpstreamError as e:

@@ -3,11 +3,11 @@
 import sys
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi_cache import FastAPICache
-from fastapi_cache.backends.inmemory import InMemoryBackend
 from loguru import logger
 from opentelemetry import metrics
 from opentelemetry.exporter.prometheus import PrometheusMetricReader
@@ -17,7 +17,54 @@ from opentelemetry.sdk.resources import Resource
 from prometheus_client import REGISTRY, generate_latest
 
 from .api import health, routes
+from .core.cache import LRUInMemoryBackend
 from .core.config import settings
+
+
+class AcceptHeaderValidationMiddleware(BaseHTTPMiddleware):
+    """Middleware to validate Accept header for JSON-only API.
+
+    Validates that requests accept application/json responses.
+    Allows requests without Accept header or with */*, application/*, or application/json.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        """Validate Accept header before processing request.
+
+        Args:
+            request: The incoming request
+            call_next: The next middleware/handler
+
+        Returns:
+            Response from next handler or 406 error
+        """
+        # Skip validation for health checks, metrics, and docs
+        if request.url.path in [
+            "/health",
+            "/ready",
+            "/metrics",
+            "/docs",
+            "/openapi.json",
+        ]:
+            return await call_next(request)
+
+        # Get Accept header
+        accept_header = request.headers.get("accept", "*/*")
+
+        # Check if JSON is acceptable
+        accepts_json = (
+            "*/*" in accept_header
+            or "application/*" in accept_header
+            or "application/json" in accept_header
+        )
+
+        if not accepts_json:
+            return JSONResponse(
+                status_code=status.HTTP_406_NOT_ACCEPTABLE,
+                content={"error": "This API only returns application/json"},
+            )
+
+        return await call_next(request)
 
 
 def setup_logging():
@@ -109,12 +156,12 @@ async def lifespan(app: FastAPI):
         # Do NOT log API key
     )
 
-    # Initialize cache
+    # Initialize cache with LRU eviction
     FastAPICache.init(
-        InMemoryBackend(),
+        LRUInMemoryBackend(max_size=settings.CACHE_MAX_SIZE),
         prefix="weather-cache:",
     )
-    logger.info("Cache initialized")
+    logger.info("Cache initialized", max_size=settings.CACHE_MAX_SIZE)
 
     # Application is now ready
     logger.info("Application ready to serve requests")
@@ -137,7 +184,9 @@ app = FastAPI(
     description="REST API that fetches current temperature data from Open-Meteo and returns normalized responses",
     version="0.1.0",
     lifespan=lifespan,
-    docs_url="/docs" if settings.LOG_LEVEL == "DEBUG" else None,  # Swagger UI only in debug mode
+    docs_url="/docs"
+    if settings.ENVIRONMENT.lower() != "production"
+    else None,  # Swagger UI in development/staging only
     redoc_url=None,  # Disable ReDoc
 )
 
@@ -149,6 +198,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add Accept header validation middleware
+app.add_middleware(AcceptHeaderValidationMiddleware)
 
 # Include routers
 app.include_router(health.router, tags=["Health"])

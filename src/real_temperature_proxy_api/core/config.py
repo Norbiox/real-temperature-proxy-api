@@ -97,6 +97,12 @@ class Settings(BaseSettings):
         description="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
     )
 
+    # Environment Configuration
+    ENVIRONMENT: str = Field(
+        default="development",
+        description="Environment (development, staging, production)",
+    )
+
     @field_validator("LOG_LEVEL")
     @classmethod
     def validate_log_level(cls, v: str) -> str:

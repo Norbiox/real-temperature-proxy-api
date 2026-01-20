@@ -2,84 +2,16 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi_cache.decorator import cache
 from loguru import logger
 
 from ..core.config import settings
 from ..models.weather import WeatherResponse
 from ..services.weather import weather_service
+from .dependencies import get_latitude_param, get_longitude_param
 
 router = APIRouter()
-
-
-def _normalize_coordinate_params(
-    lat: float | None,
-    latitude: float | None,
-    lon: float | None,
-    longitude: float | None,
-) -> tuple[float, float]:
-    """Normalize and validate coordinate query parameters.
-
-    Handles both `lat`/`lon` and `latitude`/`longitude` parameter names.
-    Precedence: if both names are provided, use the shorter version (`lat`, `lon`).
-    Returns 400 if both names are provided with conflicting values.
-
-    Args:
-        lat: Latitude (short form)
-        latitude: Latitude (long form)
-        lon: Longitude (short form)
-        longitude: Longitude (long form)
-
-    Returns:
-        Tuple of (latitude, longitude)
-
-    Raises:
-        HTTPException: If parameters are missing or conflicting
-
-    Example:
-        >>> _normalize_coordinate_params(52.52, None, 13.41, None)
-        (52.52, 13.41)
-        >>> _normalize_coordinate_params(None, 52.52, None, 13.41)
-        (52.52, 13.41)
-    """
-    # Determine which latitude to use
-    if lat is not None and latitude is not None:
-        if lat != latitude:
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "Conflicting latitude values provided (lat and latitude)"},
-            )
-        final_lat = lat
-    elif lat is not None:
-        final_lat = lat
-    elif latitude is not None:
-        final_lat = latitude
-    else:
-        raise HTTPException(
-            status_code=400,
-            detail={"error": "Latitude parameter required (lat or latitude)"},
-        )
-
-    # Determine which longitude to use
-    if lon is not None and longitude is not None:
-        if lon != longitude:
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "Conflicting longitude values provided (lon and longitude)"},
-            )
-        final_lon = lon
-    elif lon is not None:
-        final_lon = lon
-    elif longitude is not None:
-        final_lon = longitude
-    else:
-        raise HTTPException(
-            status_code=400,
-            detail={"error": "Longitude parameter required (lon or longitude)"},
-        )
-
-    return final_lat, final_lon
 
 
 @router.get(
@@ -108,7 +40,9 @@ def _normalize_coordinate_params(
             "description": "Invalid coordinates or parameters",
             "content": {
                 "application/json": {
-                    "example": {"error": "Latitude parameter required (lat or latitude)"}
+                    "example": {
+                        "error": "Latitude parameter required (lat or latitude)"
+                    }
                 }
             },
         },
@@ -124,7 +58,9 @@ def _normalize_coordinate_params(
             "description": "Upstream API timeout",
             "content": {
                 "application/json": {
-                    "example": {"error": "Gateway timeout - upstream API did not respond in time"}
+                    "example": {
+                        "error": "Gateway timeout - upstream API did not respond in time"
+                    }
                 }
             },
         },
@@ -132,56 +68,21 @@ def _normalize_coordinate_params(
 )
 @cache(expire=settings.CACHE_TTL)
 async def get_current_weather(
-    lat: Annotated[
-        float | None,
-        Query(
-            description="Latitude in decimal degrees (-90 to 90)",
-            ge=-90.0,
-            le=90.0,
-            examples=[52.52],
-        ),
-    ] = None,
-    latitude: Annotated[
-        float | None,
-        Query(
-            description="Latitude in decimal degrees (-90 to 90) - alternative to 'lat'",
-            ge=-90.0,
-            le=90.0,
-            examples=[52.52],
-        ),
-    ] = None,
-    lon: Annotated[
-        float | None,
-        Query(
-            description="Longitude in decimal degrees (-180 to 180)",
-            ge=-180.0,
-            le=180.0,
-            examples=[13.41],
-        ),
-    ] = None,
-    longitude: Annotated[
-        float | None,
-        Query(
-            description="Longitude in decimal degrees (-180 to 180) - alternative to 'lon'",
-            ge=-180.0,
-            le=180.0,
-            examples=[13.41],
-        ),
-    ] = None,
+    latitude_param: Annotated[float | None, Depends(get_latitude_param)],
+    longitude_param: Annotated[float | None, Depends(get_longitude_param)],
 ) -> WeatherResponse:
     """Get current weather conditions for specified coordinates.
 
     Fetches data from Open-Meteo API and returns normalized temperature and wind speed.
     Results are cached for 60 seconds (configurable) to reduce API calls.
 
-    Query parameters support both short (`lat`, `lon`) and long (`latitude`, `longitude`) forms.
-    If both forms are provided, the short form takes precedence unless values conflict.
+    Query parameters are case-insensitive and support multiple forms:
+    - Latitude: lat, latitude, LAT, Lat, LATITUDE, Latitude
+    - Longitude: lon, longitude, LON, Lon, LONGITUDE, Longitude
 
     Args:
-        lat: Latitude in decimal degrees (-90 to 90)
-        latitude: Alternative latitude parameter
-        lon: Longitude in decimal degrees (-180 to 180)
-        longitude: Alternative longitude parameter
+        latitude_param: Latitude from case-insensitive query parameter
+        longitude_param: Longitude from case-insensitive query parameter
 
     Returns:
         Current weather conditions with location, temperature, wind speed, and retrieval time
@@ -191,10 +92,21 @@ async def get_current_weather(
 
     Example:
         >>> # GET /v1/current?lat=52.52&lon=13.41
+        >>> # GET /v1/current?LAT=52.52&LON=13.41  (case-insensitive)
         >>> # Returns: {"location": {"lat": 52.52, "lon": 13.41}, ...}
     """
-    # Normalize and validate parameters
-    final_lat, final_lon = _normalize_coordinate_params(lat, latitude, lon, longitude)
+    # Validate required parameters
+    if latitude_param is None:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "Latitude parameter required (lat or latitude)"},
+        )
+
+    if longitude_param is None:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "Longitude parameter required (lon or longitude)"},
+        )
 
     logger.info(
         "Weather request received",
@@ -203,4 +115,4 @@ async def get_current_weather(
     )
 
     # Fetch weather (with caching and request coalescing)
-    return await weather_service.get_current_weather(final_lat, final_lon)
+    return await weather_service.get_current_weather(latitude_param, longitude_param)

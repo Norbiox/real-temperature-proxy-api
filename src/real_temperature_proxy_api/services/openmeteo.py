@@ -9,6 +9,7 @@ from tenacity import (
     retry_if_exception,
     stop_after_attempt,
     wait_exponential,
+    wait_random,
 )
 
 from ..core.config import settings
@@ -128,7 +129,8 @@ class OpenMeteoClient:
         wait=wait_exponential(
             min=settings.RETRY_DELAY / 1000.0,  # Convert ms to seconds
             multiplier=settings.RETRY_BACKOFF_MULTIPLIER,
-        ),
+        )
+        + wait_random(0, 1),  # Add jitter: 0-1 second random delay
         reraise=True,
     )
     async def get_current_weather(
@@ -165,10 +167,8 @@ class OpenMeteoClient:
         if not self._client:
             raise RuntimeError("Client not initialized. Use async context manager.")
 
-        # Round coordinates to 4 decimal places for cache key consistency
-        # But we'll pass the original values to the API
-        rounded_lat = round(latitude, 4)
-        rounded_lon = round(longitude, 4)
+        # Note: Coordinate rounding to 4 decimals is handled by the caching layer
+        # We pass original coordinates to API and return them in response
 
         # Build query parameters
         params: dict[str, float | str] = {
@@ -215,16 +215,26 @@ class OpenMeteoClient:
             # Parse response
             data = OpenMeteoResponse(**response.json())
 
-            # Normalize and return
-            return self._normalize_response(data, rounded_lat, rounded_lon)
+            # Normalize and return with original precision coordinates
+            return self._normalize_response(data, latitude, longitude)
 
         except httpx.TimeoutException as e:
             logger.warning("Open-Meteo request timed out")
             raise OpenMeteoTimeoutError("Upstream API request timed out") from e
 
         except httpx.ConnectError as e:
-            logger.warning("Failed to connect to Open-Meteo")
-            raise OpenMeteoNetworkError("Failed to connect to upstream API") from e
+            # ConnectError includes DNS resolution failures and connection refused
+            # Do NOT retry on DNS failures (decision: only retry on connection refused)
+            error_msg = str(e).lower()
+            if "name" in error_msg or "dns" in error_msg or "resolve" in error_msg:
+                logger.error("DNS resolution failed for Open-Meteo", error=str(e))
+                raise OpenMeteoNetworkError(
+                    "Failed to resolve upstream API hostname"
+                ) from e
+            else:
+                # Connection refused - this will be retried
+                logger.warning("Failed to connect to Open-Meteo (connection refused)")
+                raise OpenMeteoNetworkError("Failed to connect to upstream API") from e
 
         except httpx.HTTPError as e:
             logger.error("HTTP error occurred", error=str(e))

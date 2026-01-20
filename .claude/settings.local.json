@@ -6,7 +6,8 @@
       "Bash(timeout 5 uv run python:*)",
       "Bash(uv run python:*)",
       "Bash(git commit:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(uv run bandit:*)"
     ]
   }
 }
