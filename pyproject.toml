@@ -35,3 +35,9 @@ dev = [
     "bandit>=1.7.5",
     "pre-commit>=3.5.0",
 ]
+
+[tool.bandit]
+# Skip B101 (assert_used) globally
+# Tests use asserts for pytest - this is expected and safe
+# Production code should not use asserts for security checks
+skips = ["B101"]

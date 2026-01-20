@@ -14,9 +14,8 @@ repos:
     rev: 1.8.0
     hooks:
       - id: bandit
-        args: [-c, pyproject.toml, --skip, B101]
+        args: [-c, pyproject.toml]
         additional_dependencies: ["bandit[toml]"]
-        exclude: ^tests/
 
   # Mypy - Static type checker
   - repo: https://github.com/pre-commit/mirrors-mypy
