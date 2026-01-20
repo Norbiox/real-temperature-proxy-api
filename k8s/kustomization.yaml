@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+  - configmap.yaml
+  # Uncomment when you have created secret.yaml from secret.yaml.example
+  # - secret.yaml
+
+namespace: default  # Change to your desired namespace
+
+commonLabels:
+  app: real-temperature-proxy-api
+
+# Configure your image repository here
+images:
+  - name: real-temperature-proxy-api
+    newName: your-registry/real-temperature-proxy-api
+    newTag: latest

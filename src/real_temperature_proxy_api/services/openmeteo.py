@@ -6,7 +6,7 @@ import httpx
 from loguru import logger
 from tenacity import (
     retry,
-    retry_if_exception_type,
+    retry_if_exception,
     stop_after_attempt,
     wait_exponential,
 )
@@ -121,8 +121,10 @@ class OpenMeteoClient:
             await self._client.aclose()
 
     @retry(
-        retry=retry_if_exception_type(_should_retry),
-        stop=stop_after_attempt(settings.RETRY_COUNT + 1),  # +1 because first attempt isn't a retry
+        retry=retry_if_exception(_should_retry),
+        stop=stop_after_attempt(
+            settings.RETRY_COUNT + 1
+        ),  # +1 because first attempt isn't a retry
         wait=wait_exponential(
             min=settings.RETRY_DELAY / 1000.0,  # Convert ms to seconds
             multiplier=settings.RETRY_BACKOFF_MULTIPLIER,
@@ -169,7 +171,7 @@ class OpenMeteoClient:
         rounded_lon = round(longitude, 4)
 
         # Build query parameters
-        params = {
+        params: dict[str, float | str] = {
             "latitude": latitude,
             "longitude": longitude,
             "current": "temperature_2m,wind_speed_10m",

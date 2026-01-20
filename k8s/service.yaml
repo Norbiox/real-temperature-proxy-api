@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: real-temperature-proxy-api
+  labels:
+    app: real-temperature-proxy-api
+  annotations:
+    # Sticky sessions for per-pod cache consistency
+    # Note: This creates operational fragility - consider Redis for distributed cache
+    service.kubernetes.io/topology-mode: "Auto"
+spec:
+  type: ClusterIP
+  # Enable sticky sessions based on client IP
+  # This helps with cache efficiency but reduces HA benefits
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 300  # 5 minutes
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+    protocol: TCP
+  selector:
+    app: real-temperature-proxy-api

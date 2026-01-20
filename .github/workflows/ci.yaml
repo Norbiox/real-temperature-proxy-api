@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    name: Test on Python 3.14
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install mise
+        uses: jdx/mise-action@v2
+        with:
+          install: true
+
+      - name: Set up Python
+        run: mise install python
+
+      - name: Install uv
+        run: mise install uv
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run ruff check
+        run: uv run ruff check .
+
+      - name: Run ruff format check
+        run: uv run ruff format --check .
+
+      - name: Run bandit security check
+        run: uv run bandit -r src/
+
+      - name: Run mypy type check
+        run: uv run mypy src/ --ignore-missing-imports
+        continue-on-error: true  # Don't fail build on type errors initially
+
+      - name: Run tests with pytest
+        run: uv run pytest tests/ --cov=src --cov-report=term --cov-report=html --doctest-modules src/ -v
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: htmlcov/
+
+  integration-test:
+    name: Integration Tests (Nightly)
+    runs-on: ubuntu-latest
+    # Only run on schedule or manual trigger
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install mise
+        uses: jdx/mise-action@v2
+        with:
+          install: true
+
+      - name: Set up Python
+        run: mise install python
+
+      - name: Install uv
+        run: mise install uv
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run integration tests
+        run: uv run pytest tests/test_integration.py -v -m integration
+        env:
+          # Run against real API to verify cassettes are still valid
+          PYTEST_VCR_RECORD_MODE: none
