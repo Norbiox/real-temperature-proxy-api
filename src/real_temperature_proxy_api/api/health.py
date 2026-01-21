@@ -26,11 +26,7 @@ class HealthResponse(BaseModel):
     responses={
         200: {
             "description": "Application is alive",
-            "content": {
-                "application/json": {
-                    "example": {"status": "ok"}
-                }
-            },
+            "content": {"application/json": {"example": {"status": "ok"}}},
         },
     },
 )
@@ -58,11 +54,7 @@ async def health_check() -> HealthResponse:
     responses={
         200: {
             "description": "Application is ready",
-            "content": {
-                "application/json": {
-                    "example": {"status": "ok"}
-                }
-            },
+            "content": {"application/json": {"example": {"status": "ok"}}},
         },
     },
 )
