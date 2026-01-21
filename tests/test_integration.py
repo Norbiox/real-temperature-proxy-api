@@ -105,9 +105,11 @@ class TestOpenMeteoClientIntegration:
         """Test handling of upstream API timeout."""
         import httpx
 
-        httpx_mock.add_exception(
-            httpx.TimeoutException("Request timed out"),
-        )
+        # Mock 4 timeout exceptions (1 initial + 3 retries)
+        for _ in range(4):
+            httpx_mock.add_exception(
+                httpx.TimeoutException("Request timed out"),
+            )
 
         with pytest.raises(OpenMeteoTimeoutError):
             async with OpenMeteoClient() as client:
@@ -116,10 +118,12 @@ class TestOpenMeteoClientIntegration:
     @pytest.mark.asyncio
     async def test_upstream_5xx_error(self, httpx_mock: HTTPXMock):
         """Test handling of upstream 5xx errors."""
-        httpx_mock.add_response(
-            status_code=503,
-            json={"error": "Service unavailable"},
-        )
+        # Mock 4 5xx responses (1 initial + 3 retries)
+        for _ in range(4):
+            httpx_mock.add_response(
+                status_code=503,
+                json={"error": "Service unavailable"},
+            )
 
         with pytest.raises(OpenMeteoUpstreamError):
             async with OpenMeteoClient() as client:
@@ -139,7 +143,11 @@ class TestOpenMeteoClientIntegration:
 
     @pytest.mark.asyncio
     async def test_coordinate_rounding(self, httpx_mock: HTTPXMock):
-        """Test that coordinates are rounded for cache key consistency."""
+        """Test that coordinates are returned with original precision.
+
+        Note: Rounding to 4 decimal places is only for cache key generation,
+        not for the response coordinates (per decisions.md line 44).
+        """
         httpx_mock.add_response(
             json={
                 "latitude": 52.123456,
@@ -167,9 +175,9 @@ class TestOpenMeteoClientIntegration:
         async with OpenMeteoClient() as client:
             response = await client.get_current_weather(52.123456, 13.654321)
 
-        # Response should use rounded coordinates
-        assert response.location.lat == 52.1235  # Rounded to 4 decimal places
-        assert response.location.lon == 13.6543
+        # Response should use original precision coordinates
+        assert response.location.lat == 52.123456
+        assert response.location.lon == 13.654321
 
 
 @pytest.mark.integration
@@ -179,11 +187,13 @@ class TestWeatherEndpointIntegration:
     @pytest.mark.asyncio
     async def test_weather_endpoint_with_caching(self, client, httpx_mock: HTTPXMock):
         """Test weather endpoint with caching behavior."""
-        # Mock Open-Meteo response
+        # Use unique coordinates to avoid cache collision with other tests
+        # Mock Open-Meteo response with explicit URL matching
         httpx_mock.add_response(
+            url="https://api.open-meteo.com/v1/forecast?latitude=40.71&longitude=-74.01&current=temperature_2m%2Cwind_speed_10m",
             json={
-                "latitude": 52.52,
-                "longitude": 13.41,
+                "latitude": 40.71,
+                "longitude": -74.01,
                 "generationtime_ms": 0.123,
                 "utc_offset_seconds": 0,
                 "timezone": "GMT",
@@ -205,19 +215,19 @@ class TestWeatherEndpointIntegration:
         )
 
         # First request - should hit the API
-        response1 = client.get("/v1/current?lat=52.52&lon=13.41")
+        response1 = client.get("/v1/current?lat=40.71&lon=-74.01")
         assert response1.status_code == 200
         data1 = response1.json()
 
-        assert data1["location"]["lat"] == 52.52
-        assert data1["location"]["lon"] == 13.41
+        assert data1["location"]["lat"] == 40.71
+        assert data1["location"]["lon"] == -74.01
         assert data1["current"]["temperatureC"] == 1.2
         assert data1["current"]["windSpeedKmh"] == 9.7
         assert data1["source"] == "open-meteo"
         assert "retrievedAt" in data1
 
         # Second request - should be served from cache (no additional API call)
-        response2 = client.get("/v1/current?lat=52.52&lon=13.41")
+        response2 = client.get("/v1/current?lat=40.71&lon=-74.01")
         assert response2.status_code == 200
         data2 = response2.json()
 
@@ -228,11 +238,13 @@ class TestWeatherEndpointIntegration:
     async def test_concurrent_requests_coalescing(self, client, httpx_mock: HTTPXMock):
         """Test that concurrent requests for same coordinates are coalesced."""
 
-        # Mock response
+        # Use different coordinates to avoid cache collision with previous test
+        # Mock response with explicit URL matching
         httpx_mock.add_response(
+            url="https://api.open-meteo.com/v1/forecast?latitude=48.85&longitude=2.35&current=temperature_2m%2Cwind_speed_10m",
             json={
-                "latitude": 52.52,
-                "longitude": 13.41,
+                "latitude": 48.85,
+                "longitude": 2.35,
                 "generationtime_ms": 0.123,
                 "utc_offset_seconds": 0,
                 "timezone": "GMT",
@@ -254,7 +266,7 @@ class TestWeatherEndpointIntegration:
         )
 
         # Make request
-        response = client.get("/v1/current?lat=52.52&lon=13.41")
+        response = client.get("/v1/current?lat=48.85&lon=2.35")
         assert response.status_code == 200
 
         # Verify only one upstream call was made
