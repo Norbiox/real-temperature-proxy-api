@@ -8,8 +8,6 @@ from pydantic import ValidationError
 from src.real_temperature_proxy_api.models.weather import (
     CurrentWeatherModel,
     LocationModel,
-    OpenMeteoCurrentData,
-    OpenMeteoCurrentUnits,
     OpenMeteoResponse,
     WeatherResponse,
 )
@@ -53,10 +51,14 @@ class TestLocationModel:
         LocationModel(lat=52.0, lon=13.0)
 
         # Invalid precision (more than 6 decimal places)
-        with pytest.raises(ValidationError, match="precision must not exceed 6 decimal places"):
+        with pytest.raises(
+            ValidationError, match="precision must not exceed 6 decimal places"
+        ):
             LocationModel(lat=52.1234567, lon=13.0)
 
-        with pytest.raises(ValidationError, match="precision must not exceed 6 decimal places"):
+        with pytest.raises(
+            ValidationError, match="precision must not exceed 6 decimal places"
+        ):
             LocationModel(lat=52.0, lon=13.12345678)
 
 
